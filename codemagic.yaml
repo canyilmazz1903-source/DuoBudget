@@ -92,9 +92,6 @@ workflows:
       app_store_connect: Codemagic API
     environment:
       <<: *shared_env
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.canyilmazz1903.duobudget
       vars:
         EXPO_PUBLIC_PLATFORM: ios
     triggering:
