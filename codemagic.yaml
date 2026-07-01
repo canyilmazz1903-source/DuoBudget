@@ -1,0 +1,260 @@
+# =============================================================================
+# DuoBudget - Codemagic CI/CD Configuration
+# =============================================================================
+# Workflows:
+#   - ios-release:     Build & publish to App Store Connect
+#   - android-release: Build & publish to Google Play
+#   - develop:         PR checks (lint + typecheck only)
+# =============================================================================
+
+definitions:
+  env_versions: &env_versions
+    node: 18.18.0
+    xcode: latest
+    cocoapods: default
+
+  environment: &shared_env
+    groups:
+      - supabase        # EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY
+      - gemini           # EXPO_PUBLIC_GEMINI_API_KEY
+      - app_store        # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY
+      - google_play      # GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+      - notifications    # SLACK_WEBHOOK_URL (optional), BUILD_NOTIFICATION_EMAIL (optional)
+      - signing          # CM_CERTIFICATE, CM_CERTIFICATE_PASSWORD, CM_PROVISIONING_PROFILE
+
+  cache: &node_cache
+    cache_paths:
+      - $CM_BUILD_DIR/node_modules
+
+  scripts:
+    - &install_deps
+      name: Install dependencies
+      script: |
+        npm ci
+
+    - &typecheck
+      name: TypeScript type checking
+      script: |
+        npx tsc --noEmit
+
+    - &lint
+      name: Run ESLint
+      script: |
+        npx eslint . --max-warnings 0
+
+    - &increment_build_number
+      name: Auto-increment build number
+      script: |
+        #!/bin/bash
+        set -e
+
+        # Use Codemagic build number for consistent versioning
+        BUILD_NUMBER=$PROJECT_BUILD_NUMBER
+
+        echo "Setting build number to: $BUILD_NUMBER"
+
+        # Update app.json / app.config.js build numbers
+        if [ -f "app.json" ]; then
+          node -e "
+            const fs = require('fs');
+            const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            config.expo = config.expo || {};
+            config.expo.ios = config.expo.ios || {};
+            config.expo.android = config.expo.android || {};
+            config.expo.ios.buildNumber = '$BUILD_NUMBER';
+            config.expo.android.versionCode = parseInt('$BUILD_NUMBER', 10);
+            fs.writeFileSync('app.json', JSON.stringify(config, null, 2));
+          "
+        fi
+
+        echo "Build number set to $BUILD_NUMBER"
+
+    - &setup_env_file
+      name: Create .env file from environment variables
+      script: |
+        #!/bin/bash
+        set -e
+        cat > .env << EOF
+        EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL
+        EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY
+        EXPO_PUBLIC_GEMINI_API_KEY=$EXPO_PUBLIC_GEMINI_API_KEY
+        EOF
+
+# =============================================================================
+# WORKFLOW: iOS Release
+# =============================================================================
+workflows:
+  ios-release:
+    name: iOS Release Build
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: DuoBudget App Store
+    environment:
+      <<: *shared_env
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.canyilmazz1903.duobudget
+      vars:
+        EXPO_PUBLIC_PLATFORM: ios
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "v*"
+          include: true
+      cancel_previous_builds: true
+    cache: *node_cache
+    scripts:
+      - *install_deps
+      - *typecheck
+      - *lint
+      - *increment_build_number
+      - *setup_env_file
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios && pod install
+
+      - name: Build iOS app with Expo (prebuild)
+        script: |
+          npx expo prebuild --platform ios --clean
+
+      - name: Build iOS IPA
+        script: |
+          xcode-project build-ipa \
+            --workspace "ios/DuoBudget.xcworkspace" \
+            --scheme "DuoBudget" \
+            --config Release
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
+      email:
+        recipients:
+          - ${BUILD_NOTIFICATION_EMAIL}
+        notify:
+          success: true
+          failure: true
+      slack:
+        channel: "#duobudget-builds"
+        notify_on_build_start: false
+        notify:
+          success: true
+          failure: true
+
+# =============================================================================
+# WORKFLOW: Android Release
+# =============================================================================
+  android-release:
+    name: Android Release Build
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      <<: *shared_env
+      android_signing:
+        - duobudget_keystore
+      java: 17
+      vars:
+        EXPO_PUBLIC_PLATFORM: android
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "v*"
+          include: true
+      cancel_previous_builds: true
+    cache: *node_cache
+    scripts:
+      - *install_deps
+      - *typecheck
+      - *lint
+      - *increment_build_number
+      - *setup_env_file
+
+      - name: Build Android app with Expo (prebuild)
+        script: |
+          npx expo prebuild --platform android --clean
+
+      - name: Set Android SDK location
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+
+      - name: Build Android AAB (App Bundle)
+        script: |
+          cd android
+          ./gradlew bundleRelease
+
+    artifacts:
+      - android/app/build/outputs/**/*.aab
+      - android/app/build/outputs/**/*.apk
+      - android/app/build/outputs/**/mapping.txt
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
+      email:
+        recipients:
+          - ${BUILD_NOTIFICATION_EMAIL}
+        notify:
+          success: true
+          failure: true
+      slack:
+        channel: "#duobudget-builds"
+        notify_on_build_start: false
+        notify:
+          success: true
+          failure: true
+
+# =============================================================================
+# WORKFLOW: Develop (PR Checks)
+# =============================================================================
+  develop:
+    name: PR Checks (Lint + TypeCheck)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      <<: *shared_env
+    triggering:
+      events:
+        - pull_request
+      branch_patterns:
+        - pattern: "develop"
+          include: true
+        - pattern: "main"
+          include: true
+      cancel_previous_builds: true
+    cache: *node_cache
+    scripts:
+      - *install_deps
+      - *typecheck
+      - *lint
+
+      - name: Run tests (if available)
+        script: |
+          if grep -q '"test"' package.json; then
+            npm test -- --ci --coverage
+          else
+            echo "No test script found, skipping..."
+          fi
+        ignore_failure: true
+
+    artifacts:
+      - coverage/**
+
+    publishing:
+      email:
+        recipients:
+          - ${BUILD_NOTIFICATION_EMAIL}
+        notify:
+          success: false
+          failure: true
