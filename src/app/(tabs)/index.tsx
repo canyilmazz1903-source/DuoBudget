@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Text, ScrollView, RefreshControl, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { useBudgetStore } from '../../store/budgetStore';
@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenErrorBoundary } from '../../components/ErrorBoundary';
 import { useOfflineSync } from '../../hooks/useOfflineSync';
 import { TransactionType, TransactionSource } from '../../types';
+import { pickPdfFile, readPdfAsBase64, extractTextFromPdf } from '../../utils/pdfParser';
+import { analyzeStatement } from '../../api/gemini';
 
 function DashboardScreen() {
   const router = useRouter();
@@ -28,11 +30,89 @@ function DashboardScreen() {
   const transactions = useBudgetStore((state) => state.transactions);
   const budgets = useBudgetStore((state) => state.budgets);
   const categories = useBudgetStore((state) => state.categories);
+  const cards = useBudgetStore((state) => state.cards);
   const isLoading = useBudgetStore((state) => state.isLoading);
   const loadInitialData = useBudgetStore((state) => state.loadInitialData);
 
   const [refreshing, setRefreshing] = useState(false);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handlePdfImport = async () => {
+    if (!jointAccountId || !profile) return;
+    
+    try {
+      const file = await pickPdfFile();
+      if (!file) return; // User cancelled
+
+      setIsImporting(true);
+      
+      const base64 = await readPdfAsBase64(file.uri);
+      if (!base64) {
+        Alert.alert('Hata', 'Dosya okunamadı.');
+        setIsImporting(false);
+        return;
+      }
+
+      const extractResult = await extractTextFromPdf(base64);
+      if (!extractResult.success || !extractResult.text) {
+        Alert.alert('Hata', extractResult.error || 'Metin çıkarma başarısız.');
+        setIsImporting(false);
+        return;
+      }
+
+      const analysis = await analyzeStatement(extractResult.text);
+      if (!analysis.success || analysis.transactions.length === 0) {
+        Alert.alert('Hata', analysis.errorMessage || 'AI ekstrede işlem tespit edemedi.');
+        setIsImporting(false);
+        return;
+      }
+
+      const count = analysis.transactions.length;
+      const totalExpense = analysis.summary.totalExpense;
+      
+      Alert.alert(
+        'Ekstre Analizi Tamamlandı',
+        `AI ekstrede ${count} işlem tespit etti.\nToplam harcama: ${formatMoney(totalExpense)}\n\nBu işlemleri ortak hesabınıza eklemek istiyor musunuz?`,
+        [
+          { text: 'İptal', style: 'cancel', onPress: () => setIsImporting(false) },
+          {
+            text: 'Ekle',
+            onPress: async () => {
+              for (const parsedTx of analysis.transactions) {
+                const matchedCategory = categories.find(
+                  (c) => c.name.toLowerCase() === parsedTx.suggestedCategory.toLowerCase()
+                );
+                const categoryId = matchedCategory ? matchedCategory.id : (categories.find(c => c.name === 'Diğer')?.id || categories[0]?.id);
+
+                await useBudgetStore.getState().addTransactionItem(jointAccountId, profile.id, {
+                  category_id: categoryId,
+                  card_id: null,
+                  type: parsedTx.type as TransactionType,
+                  amount: parsedTx.amount,
+                  description: parsedTx.description,
+                  merchant: parsedTx.description,
+                  transaction_date: parsedTx.date,
+                  source: TransactionSource.PDF_IMPORT,
+                  is_recurring: false,
+                  is_synced: true,
+                });
+              }
+
+              Alert.alert('Başarılı', `${count} adet işlem başarıyla eklendi.`);
+              setIsImporting(false);
+              loadInitialData(jointAccountId);
+            },
+          },
+        ]
+      );
+
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert('Hata', 'PDF ekstresi işlenirken beklenmeyen bir hata oluştu.');
+      setIsImporting(false);
+    }
+  };
 
   const onRefresh = async () => {
     if (jointAccountId) {
@@ -146,6 +226,89 @@ function DashboardScreen() {
           <Text style={styles.paydayText}>
             Maaş gününüze <Text style={styles.boldText}>{daysToPayday}</Text> gün kaldı (Ayın {paydayDay}. günü)
           </Text>
+        </View>
+
+        {/* Cards & PDF Import Guide Section */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.importBanner, isImporting && styles.disabledBanner]}
+            onPress={handlePdfImport}
+            disabled={isImporting}
+            activeOpacity={0.8}
+          >
+            <View style={styles.importBannerLeft}>
+              {isImporting ? (
+                <ActivityIndicator size="small" color="#2563EB" style={{ marginRight: 12 }} />
+              ) : (
+                <Ionicons name="document-text" size={24} color="#2563EB" style={{ marginRight: 12 }} />
+              )}
+              <View style={styles.importBannerText}>
+                <Text style={styles.importBannerTitle}>Ekstre Yükle (PDF)</Text>
+                <Text style={styles.importBannerDesc} numberOfLines={1}>
+                  {isImporting ? 'Ekstre işleniyor...' : 'Harcamaları yapay zeka ile otomatik bütçeleyin'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#64748B" />
+          </TouchableOpacity>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Kartlarım & Hesaplarım</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/settings')}>
+              <Text style={styles.sectionLink}>Yönet</Text>
+            </TouchableOpacity>
+          </View>
+
+          {cards.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.cardsScroll}
+              style={styles.cardsScrollWrapper}
+            >
+              {cards.map((c) => (
+                <View
+                  key={c.id}
+                  style={[
+                    styles.creditCard,
+                    { backgroundColor: c.color || '#3b82f6' }
+                  ]}
+                >
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.cardName} numberOfLines={1}>{c.card_name}</Text>
+                    <Ionicons
+                      name={c.card_type === 'credit' ? 'card' : 'wallet'}
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                  <View style={styles.cardBody}>
+                    <Text style={styles.cardDigits}>
+                      {c.last_four_digits ? `•••• ${c.last_four_digits}` : c.card_type === 'credit' ? 'Kredi Kartı' : 'Banka Kartı'}
+                    </Text>
+                  </View>
+                  <View style={styles.cardFooter}>
+                    {c.card_type === 'credit' ? (
+                      <Text style={styles.cardLimit}>Limit: {formatMoney(c.credit_limit || 0)}</Text>
+                    ) : (
+                      <Text style={styles.cardLimit}>Hesap / Nakit</Text>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <TouchableOpacity
+              style={styles.emptyCardsCard}
+              onPress={() => router.push('/(tabs)/settings')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="card-outline" size={24} color="#64748B" style={{ marginBottom: 4 }} />
+              <Text style={styles.emptyCardsText}>
+                Henüz kart eklemediniz. Eklemek için dokunun.
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Top Budgets */}
@@ -401,5 +564,106 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 5,
+  },
+  importBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  disabledBanner: {
+    opacity: 0.6,
+  },
+  importBannerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  importBannerText: {
+    flex: 1,
+  },
+  importBannerTitle: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#1E40AF',
+  },
+  importBannerDesc: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: '#2563EB',
+    marginTop: 2,
+  },
+  cardsScrollWrapper: {
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  cardsScroll: {
+    paddingRight: 40,
+    gap: 12,
+    paddingVertical: 4,
+  },
+  creditCard: {
+    width: 220,
+    height: 120,
+    borderRadius: 16,
+    padding: 16,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardName: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
+    flex: 1,
+    marginRight: 8,
+  },
+  cardBody: {
+    marginVertical: 4,
+  },
+  cardDigits: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+  },
+  cardFooter: {
+    alignItems: 'flex-start',
+  },
+  cardLimit: {
+    fontSize: 11,
+    fontFamily: 'Inter_500Medium',
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  emptyCardsCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  emptyCardsText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    color: '#64748B',
+    textAlign: 'center',
   },
 });

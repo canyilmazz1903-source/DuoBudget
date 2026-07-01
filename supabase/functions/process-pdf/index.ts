@@ -1,7 +1,7 @@
 // =============================================================================
 // DuoBudget - PDF Processing Edge Function
 // =============================================================================
-// Accepts a PDF as base64, extracts text using unpdf, returns JSON.
+// Accepts a PDF as base64, extracts text using pdf-parse, returns JSON.
 //
 // Request:
 //   POST /process-pdf
@@ -14,7 +14,7 @@
 
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { extractText, getDocumentProxy } from "npm:unpdf";
+import pdf from "npm:pdf-parse/lib/pdf-parse.js";
 
 // CORS headers for cross-origin requests
 const corsHeaders = {
@@ -133,12 +133,10 @@ serve(async (req: Request): Promise<Response> => {
     }
 
     // ---------------------------------------------------------------------------
-    // 4. Extract text from PDF using unpdf
+    // 4. Extract text from PDF using pdf-parse
     // ---------------------------------------------------------------------------
-    const pdf = await getDocumentProxy(pdfBuffer);
-    const { totalPages, text } = await extractText(pdf, { mergePages: true });
-
-    const extractedText = Array.isArray(text) ? text.join("\n") : text;
+    const parsedData = await pdf(pdfBuffer);
+    const extractedText = parsedData.text;
 
     // ---------------------------------------------------------------------------
     // 5. Return result
@@ -147,7 +145,7 @@ serve(async (req: Request): Promise<Response> => {
       JSON.stringify({
         success: true,
         text: extractedText,
-        pages: totalPages,
+        pages: parsedData.numpages || 1,
         totalLength: extractedText.length,
         userId: userData.user.id,
       }),

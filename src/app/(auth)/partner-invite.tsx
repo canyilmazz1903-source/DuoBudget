@@ -76,31 +76,6 @@ function PartnerInviteScreen() {
     partnerStatus = partner ? 'active' : 'pending';
   }
 
-  // Get joint account invite code if exists
-  const myInviteCode = profile?.joint_account_id ? 'PND-CODE' : null; 
-  // Wait, in our schema, joint_accounts invite_code is generated. Let's see if we should fetch it.
-  // In a real app we fetch it from joint_accounts table. Let's use a placeholder or read it.
-  // We can fetch it or show profile's info.
-  // Let's assume we can fetch the joint account to get the real code.
-  const [realCode, setRealCode] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (profile?.joint_account_id) {
-      import('../../api/supabase').then(({ supabase }) => {
-        (supabase as any)
-          .from('joint_accounts')
-          .select('invite_code')
-          .eq('id', profile.joint_account_id as string)
-          .single()
-          .then(({ data }: any) => {
-            if (data?.invite_code) {
-              setRealCode(data.invite_code);
-            }
-          });
-      });
-    }
-  }, [profile?.joint_account_id]);
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -117,9 +92,9 @@ function PartnerInviteScreen() {
         {/* Status Indicator */}
         <PartnerStatus partnerName={partner?.full_name || null} status={partnerStatus} />
 
-        {profile?.joint_account_id && realCode ? (
+        {profile?.joint_account_id && profile?.invite_code ? (
           <View style={styles.inviteContainer}>
-            <InviteCodeDisplay inviteCode={realCode} />
+            <InviteCodeDisplay inviteCode={profile.invite_code} />
             <Text style={styles.waitingText}>
               Partneriniz bu kodu girdiğinde otomatik olarak eşleşeceksiniz.
             </Text>

@@ -284,9 +284,10 @@ export function AddTransactionModal({
         style={styles.keyboardView}
       >
         <ScrollView
-          showsVerticalScrollIndicator={false}
-          bounces={false}
+          showsVerticalScrollIndicator={true}
+          bounces={true}
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scrollContent}
         >
           {/* Header */}
           <View style={styles.header}>
@@ -400,9 +401,9 @@ const styles = StyleSheet.create({
   categoryItem: {
     width: '30%',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 12,
     borderRadius: 12,
-    gap: 8,
+    gap: 4,
   },
   categoryLabel: {
     fontSize: 12,
@@ -430,6 +431,9 @@ const styles = StyleSheet.create({
   summaryCategory: {
     fontSize: 15,
     fontFamily: 'Inter_500Medium',
+  },
+  scrollContent: {
+    paddingBottom: 40,
   },
 });
 
