@@ -54,6 +54,13 @@ export function Input({
   const [showPassword, setShowPassword] = useState(false);
   const labelAnim = useSharedValue(value ? 1 : 0);
 
+  const hasValue = value !== undefined && value !== null && value !== '';
+
+  // React to value or focus changes dynamically
+  React.useEffect(() => {
+    labelAnim.value = withTiming(isFocused || hasValue ? 1 : 0, { duration: 200 });
+  }, [value, isFocused, hasValue]);
+
   // Colors
   const bg = isDark ? '#1E293B' : '#FFFFFF';
   const borderDefault = isDark ? '#334155' : '#E2E8F0';
@@ -68,27 +75,23 @@ export function Input({
   const handleFocus = useCallback(
     (e: Parameters<NonNullable<TextInputProps['onFocus']>>[0]) => {
       setIsFocused(true);
-      labelAnim.value = withTiming(1, { duration: 200 });
       onFocus?.(e);
     },
-    [labelAnim, onFocus],
+    [onFocus],
   );
 
   const handleBlur = useCallback(
     (e: Parameters<NonNullable<TextInputProps['onBlur']>>[0]) => {
       setIsFocused(false);
-      if (!value) {
-        labelAnim.value = withTiming(0, { duration: 200 });
-      }
       onBlur?.(e);
     },
-    [labelAnim, onBlur, value],
+    [onBlur],
   );
 
   const labelAnimStyle = useAnimatedStyle(() => {
     return {
       transform: [
-        { translateY: interpolate(labelAnim.value, [0, 1], [0, -24]) },
+        { translateY: interpolate(labelAnim.value, [0, 1], [0, -22]) },
         { scale: interpolate(labelAnim.value, [0, 1], [1, 0.8]) },
       ],
       color: interpolateColor(
@@ -146,6 +149,7 @@ export function Input({
             onBlur={handleBlur}
             secureTextEntry={variant === 'password' && !showPassword}
             keyboardType={variant === 'currency' ? 'decimal-pad' : rest.keyboardType}
+            placeholder={(isFocused || hasValue) ? rest.placeholder : undefined}
             placeholderTextColor={placeholderColor}
             editable={!disabled}
             {...rest}

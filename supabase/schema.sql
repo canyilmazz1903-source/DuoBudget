@@ -34,7 +34,7 @@ DECLARE
   code_exists BOOLEAN;
 BEGIN
   LOOP
-    new_code := encode(gen_random_bytes(4), 'hex');
+    new_code := substr(md5(random()::text), 1, 8);
     SELECT EXISTS(SELECT 1 FROM profiles WHERE invite_code = new_code) INTO code_exists;
     IF NOT code_exists THEN
       RETURN new_code;
