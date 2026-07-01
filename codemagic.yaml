@@ -130,10 +130,13 @@ workflows:
 
       - name: Build iOS IPA
         script: |
-          xcode-project build-ipa \
-            --workspace "ios/DuoBudget.xcworkspace" \
-            --scheme "DuoBudget" \
-            --config Release
+          xcodebuild -workspace "ios/DuoBudget.xcworkspace" \
+            -scheme "DuoBudget" \
+            -config Release \
+            -archivePath "$CM_BUILD_DIR/build/ios/DuoBudget.xcarchive" \
+            archive \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGN_STYLE=Manual 2>&1 | tail -100
 
     artifacts:
       - build/ios/ipa/*.ipa
