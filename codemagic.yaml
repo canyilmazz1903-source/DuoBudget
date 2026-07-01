@@ -17,6 +17,7 @@ definitions:
     groups:
       - supabaseduo
       - geminiapi
+      - signing
 
   cache: &node_cache
     cache_paths:
