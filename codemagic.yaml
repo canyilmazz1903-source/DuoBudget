@@ -130,10 +130,21 @@ workflows:
 
       - name: Build iOS IPA
         script: |
+          set +e
           xcode-project build-ipa \
             --workspace "ios/DuoBudget.xcworkspace" \
             --scheme "DuoBudget" \
-            --config Release
+            --config Release 2>&1 | tee /tmp/build_output.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo ""
+            echo "========== BUILD ERRORS =========="
+            grep -iE "error:|fatal|failed" /tmp/build_output.log | head -40
+            echo ""
+            echo "========== LAST 80 LINES =========="
+            tail -80 /tmp/build_output.log
+            exit $BUILD_EXIT
+          fi
 
     artifacts:
       - build/ios/ipa/*.ipa
