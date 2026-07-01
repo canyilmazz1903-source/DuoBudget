@@ -129,49 +129,12 @@ workflows:
         script: |
           xcode-project use-profiles --project ios/*.xcodeproj
 
-      - name: Build iOS Archive
+      - name: Build iOS IPA
         script: |
-          xcodebuild -workspace "ios/DuoBudget.xcworkspace" \
-            -scheme "DuoBudget" \
-            -config Release \
-            -archivePath "$CM_BUILD_DIR/build/ios/DuoBudget.xcarchive" \
-            archive \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            CODE_SIGN_STYLE=Manual > /tmp/xcodebuild.log 2>&1
-          BUILD_STATUS=$?
-          if [ $BUILD_STATUS -ne 0 ]; then
-            echo "========== BUILD FAILED =========="
-            tail -200 /tmp/xcodebuild.log
-            exit $BUILD_STATUS
-          fi
-
-      - name: Export IPA
-        script: |
-          cat > /tmp/ExportOptions.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store</string>
-            <key>teamID</key>
-            <string>${DEVELOPMENT_TEAM}</string>
-            <key>uploadBitcode</key>
-            <false/>
-            <key>uploadSymbols</key>
-            <true/>
-            <key>signingStyle</key>
-            <string>manual</string>
-          </dict>
-          </plist>
-          EOF
-
-          xcodebuild -exportArchive \
-            -archivePath "$CM_BUILD_DIR/build/ios/DuoBudget.xcarchive" \
-            -exportOptionsPlist /tmp/ExportOptions.plist \
-            -exportPath "$CM_BUILD_DIR/build/ios/ipa"
+          xcode-project build-ipa \
+            --workspace "ios/DuoBudget.xcworkspace" \
+            --scheme "DuoBudget" \
+            --config Release
 
     artifacts:
       - build/ios/ipa/*.ipa
