@@ -15,8 +15,8 @@ definitions:
 
   environment: &shared_env
     groups:
-      - supabase        # EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY
-      - gemini          # EXPO_PUBLIC_GEMINI_API_KEY
+      - supabaseduo
+      - geminiapi
 
   cache: &node_cache
     cache_paths:
