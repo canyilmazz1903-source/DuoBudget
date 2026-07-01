@@ -16,11 +16,7 @@ definitions:
   environment: &shared_env
     groups:
       - supabase        # EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY
-      - gemini           # EXPO_PUBLIC_GEMINI_API_KEY
-      - app_store        # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY
-      - google_play      # GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-      - notifications    # SLACK_WEBHOOK_URL (optional), BUILD_NOTIFICATION_EMAIL (optional)
-      - signing          # CM_CERTIFICATE, CM_CERTIFICATE_PASSWORD, CM_PROVISIONING_PROFILE
+      - gemini          # EXPO_PUBLIC_GEMINI_API_KEY
 
   cache: &node_cache
     cache_paths:
