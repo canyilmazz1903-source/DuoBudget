@@ -88,6 +88,9 @@ workflows:
       app_store_connect: Codemagic API
     environment:
       <<: *shared_env
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.canyilmazz1903.duobudget
       vars:
         EXPO_PUBLIC_PLATFORM: ios
     triggering:
@@ -108,20 +111,6 @@ workflows:
       - name: Build iOS app with Expo (prebuild)
         script: |
           npx expo prebuild --platform ios --clean
-
-      - name: Fetch signing files
-        script: |
-          app-store-connect fetch-signing-files "com.canyilmazz1903.duobudget" \
-            --type IOS_APP_STORE \
-            --create
-
-      - name: Initialize Keychain
-        script: |
-          keychain initialize
-
-      - name: Add certificates to Keychain
-        script: |
-          keychain add-certificates
 
       - name: Set up code signing settings in Xcode project
         script: |
