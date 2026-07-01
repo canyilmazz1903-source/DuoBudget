@@ -91,6 +91,7 @@ workflows:
       <<: *shared_env
       vars:
         EXPO_PUBLIC_PLATFORM: ios
+        DEVELOPMENT_TEAM: "84P45WA3X4"
     triggering:
       events:
         - tag
@@ -128,23 +129,43 @@ workflows:
         script: |
           xcode-project use-profiles --project ios/*.xcodeproj
 
-      - name: Build iOS IPA
+      - name: Build iOS Archive
         script: |
-          set +e
-          xcode-project build-ipa \
-            --workspace "ios/DuoBudget.xcworkspace" \
-            --scheme "DuoBudget" \
-            --config Release 2>&1 | tee /tmp/build_output.log
-          BUILD_EXIT=${PIPESTATUS[0]}
-          if [ $BUILD_EXIT -ne 0 ]; then
-            echo ""
-            echo "========== BUILD ERRORS =========="
-            grep -iE "error:|fatal|failed" /tmp/build_output.log | head -40
-            echo ""
-            echo "========== LAST 80 LINES =========="
-            tail -80 /tmp/build_output.log
-            exit $BUILD_EXIT
-          fi
+          xcodebuild -workspace "ios/DuoBudget.xcworkspace" \
+            -scheme "DuoBudget" \
+            -config Release \
+            -archivePath "$CM_BUILD_DIR/build/ios/DuoBudget.xcarchive" \
+            archive \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_STYLE=Manual 2>&1 | tail -200
+
+      - name: Export IPA
+        script: |
+          cat > /tmp/ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>teamID</key>
+            <string>${DEVELOPMENT_TEAM}</string>
+            <key>uploadBitcode</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>signingStyle</key>
+            <string>manual</string>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$CM_BUILD_DIR/build/ios/DuoBudget.xcarchive" \
+            -exportOptionsPlist /tmp/ExportOptions.plist \
+            -exportPath "$CM_BUILD_DIR/build/ios/ipa"
 
     artifacts:
       - build/ios/ipa/*.ipa
