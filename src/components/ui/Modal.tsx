@@ -124,7 +124,7 @@ export function Modal({
               styles.sheet,
               {
                 backgroundColor: cardBg,
-                maxHeight,
+                height: maxHeight,
                 paddingBottom: insets.bottom + 16,
               },
               sheetAnimStyle,

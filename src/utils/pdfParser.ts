@@ -34,7 +34,8 @@ export const pickPdfFile = async (): Promise<DocumentPicker.DocumentPickerAsset 
  */
 export const readPdfAsBase64 = async (fileUri: string): Promise<string | null> => {
   try {
-    const base64 = await FileSystem.readAsStringAsync(fileUri, {
+    const decodedUri = decodeURIComponent(fileUri);
+    const base64 = await FileSystem.readAsStringAsync(decodedUri, {
       encoding: FileSystem.EncodingType.Base64,
     });
     return base64;

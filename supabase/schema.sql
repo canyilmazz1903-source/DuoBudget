@@ -28,6 +28,8 @@ CREATE TYPE category_type AS ENUM ('income', 'expense');
 CREATE OR REPLACE FUNCTION generate_invite_code()
 RETURNS TEXT
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   new_code TEXT;
